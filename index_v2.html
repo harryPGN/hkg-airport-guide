@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>HKG Airport Guide | Official API</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Zen Kaku Gothic New', 'Noto Sans TC', sans-serif; background-color: #F5F5F0; color: #444; }
+        .page-fade-enter-active, .page-fade-leave-active { transition: opacity 0.2s ease-in-out; }
+        .page-fade-enter-from, .page-fade-leave-to { opacity: 0; }
+        #app { -webkit-tap-highlight-color: transparent; }
+        
+        .details-enter-active, .details-leave-active {
+            transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            max-height: 600px;
+            opacity: 1;
+        }
+        .details-enter-from, .details-leave-to {
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app" class="max-w-md mx-auto bg-[#F5F5F0] min-h-screen flex flex-col shadow-xl">
+
+        <!-- Header -->
+        <header class="bg-white/80 backdrop-blur-md sticky top-0 z-20 text-center py-5 border-b border-stone-200">
+            <h1 class="text-xl font-bold tracking-tight text-stone-800">HKG Airport Guide</h1>
+            <p class="text-[10px] text-stone-400 uppercase tracking-widest mt-0.5">AAHK Official Data Feed</p>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-grow p-4 overflow-y-auto">
+            <transition name="page-fade" mode="out-in">
+                
+                <!-- 1. Home Section -->
+                 <div v-if="activeTab === 'home'" class="space-y-6">
+                    <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-stone-100">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-3xl font-bold text-stone-800">{{ currentTime }}</p>
+                                <p class="text-sm text-stone-500 mt-1">{{ currentDate }}</p>
+                            </div>
+                            <div class="text-right">
+                                <div class="flex items-center justify-end space-x-2">
+                                    <span class="text-2xl font-medium text-stone-700">{{ weather.temp }}°C</span>
+                                    <img :src="weather.weatherIcon" class="h-8 w-8" alt="Weather">
+                                </div>
+                                <div class="flex justify-end space-x-1 mt-2">
+                                    <img v-for="sig in weather.signals" :key="sig" :src="sig" class="h-6" alt="Signal">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-stone-100">
+                        <h2 class="text-lg font-bold text-stone-700 mb-3 italic">Welcome.</h2>
+                        <p class="text-stone-500 text-sm leading-relaxed">
+                            Official real-time data from AAHK. View departure and arrival schedules with terminal and gate information.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- 2. Airport Maps -->
+                <div v-else-if="activeTab === 'map'" class="space-y-4">
+                     <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-stone-100">
+                        <h2 class="text-lg font-bold text-stone-700 mb-4">🗺️ Gate Guide</h2>
+                        <div class="overflow-hidden rounded-2xl border border-stone-100 mb-5">
+                            <img src="https://www.hongkongairport.com/iwov-resources/images/maps/level-6_departure.jpg" alt="Map" class="w-full">
+                        </div>
+                        <div class="space-y-3 text-sm text-stone-500">
+                            <p>🔹 <b>Gates 1-36:</b> Main Concourse (Walk)</p>
+                            <p>🔸 <b>Gates 40-71:</b> West Hall (via Train)</p>
+                            <p>🔹 <b>Gates 201-230:</b> North Satellite (via Bus)</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Flights -->
+                <div v-else-if="activeTab === 'flights'" class="space-y-4">
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-stone-100 flex items-center justify-between">
+                        <span class="text-xs font-bold text-stone-400 uppercase">Select Date</span>
+                        <input type="date" v-model="selectedDate" class="bg-transparent font-bold text-stone-700 focus:outline-none">
+                    </div>
+
+                    <div class="bg-stone-200/50 p-1 rounded-full flex">
+                        <button @click="setFlightType('departures')" :class="flightType === 'departures' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-400'" class="w-1/2 py-2 text-xs font-bold rounded-full transition-all">DEPARTURES</button>
+                        <button @click="setFlightType('arrivals')" :class="flightType === 'arrivals' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-400'" class="w-1/2 py-2 text-xs font-bold rounded-full transition-all">ARRIVALS</button>
+                    </div>
+                    
+                    <!-- Loading UI -->
+                    <div v-if="isLoading" class="text-center py-20">
+                        <div class="animate-spin h-6 w-6 border-2 border-stone-300 border-t-stone-800 rounded-full mx-auto mb-4"></div>
+                        <p class="text-stone-400 text-sm">Synchronizing official data...</p>
+                    </div>
+
+                    <div v-else-if="allFlights.length === 0" class="text-center py-20">
+                        <p class="text-stone-400 text-sm">No flight data found for this date.</p>
+                    </div>
+
+                    <div v-else class="space-y-3">
+                        <div v-for="flight in allFlights" :key="flight.id" class="bg-white rounded-[1.5rem] shadow-sm border border-stone-100 overflow-hidden">
+                            <div @click="toggleFlightDetails(flight.id)" class="p-5 flex items-center cursor-pointer active:bg-stone-50 transition-colors">
+                                <div class="flex-grow">
+                                    <p class="text-xs font-bold text-stone-400 mb-0.5">{{ flight.flight_number }}</p>
+                                    <p class="font-bold text-stone-800 text-lg">{{ flight.airport }}</p>
+                                </div>
+                                <div class="text-right flex items-center">
+                                    <span :class="getStatusClass(flight.status)" class="px-3 py-1 text-[10px] font-bold rounded-full uppercase tracking-tighter">{{ flight.status }}</span>
+                                    <svg class="h-4 w-4 ml-2 text-stone-300 transition-transform" :class="{'rotate-180': openFlightId === flight.id}" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 9l-7 7-7-7" stroke-width="3"/></svg>
+                                </div>
+                            </div>
+                            
+                            <!-- Dropdown Details -->
+                            <transition name="details">
+                                <div v-if="openFlightId === flight.id" class="px-5 pb-5">
+                                    <div class="bg-stone-50 rounded-2xl p-4 space-y-4">
+                                        <!-- Photo Area -->
+                                        <div class="w-full h-40 overflow-hidden rounded-xl border border-stone-200 bg-white">
+                                            <img :src="getAircraftImageUrl(flight.aircraftFull)" 
+                                                 @error="handleImageError"
+                                                 class="w-full h-full object-cover">
+                                        </div>
+                                        <!-- Info Grid -->
+                                        <div class="grid grid-cols-2 gap-y-4 text-xs">
+                                            <div><p class="text-stone-400">Scheduled</p><p class="font-bold text-stone-700 text-sm">{{ flight.scheduledTime }}</p></div>
+                                            <div><p class="text-stone-400">Actual/Estimated</p><p class="font-bold text-stone-700 text-sm">{{ flight.actualTime || '--:--' }}</p></div>
+                                            <div><p class="text-stone-400">Gate</p><p class="font-bold text-blue-600 text-sm">{{ flight.gate || 'TBC' }}</p></div>
+                                            <div><p class="text-stone-400">Terminal / Aisle</p><p class="font-bold text-stone-700 text-sm">T{{ flight.terminal }} / {{ flight.aisle }}</p></div>
+                                            <div class="col-span-2 border-t border-stone-200 pt-3">
+                                                <p class="text-stone-400">Aircraft (Mock Data)</p>
+                                                <p class="font-bold text-stone-700 text-sm">{{ flight.aircraftFull }}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </transition>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 4. Traffic -->
+                <div v-else-if="activeTab === 'traffic'" class="space-y-4">
+                     <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-stone-100">
+                        <h2 class="text-lg font-bold text-stone-700 mb-5">🚗 Travel Estimates</h2>
+                        <div class="space-y-4">
+                            <div v-for="item in trafficEstimates" :key="item.district" class="p-4 bg-stone-50 rounded-2xl">
+                                <h3 class="font-bold text-stone-800 text-sm mb-3">{{ item.district }}</h3>
+                                <div class="grid grid-cols-3 gap-1 text-center text-[10px]">
+                                    <div><p class="text-stone-400">Airport Exp</p><p class="font-bold">{{ item.mtr }}</p></div>
+                                    <div><p class="text-stone-400">Bus</p><p class="font-bold">{{ item.bus }}</p></div>
+                                    <div><p class="text-stone-400">Taxi</p><p class="font-bold">{{ item.taxi }}</p></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </transition>
+        </main>
+
+        <!-- Bottom Navigation -->
+        <nav class="bg-white/90 backdrop-blur-md sticky bottom-0 z-20 grid grid-cols-4 border-t border-stone-100 pb-2">
+             <button @click="activeTab = 'home'" :class="getNavClass('home')" class="flex flex-col items-center justify-center py-3"><svg class="h-5 w-5 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg><span class="text-[10px] font-bold">HOME</span></button>
+            <button @click="activeTab = 'map'" :class="getNavClass('map')" class="flex flex-col items-center justify-center py-3"><svg class="h-5 w-5 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13v-6m0 6l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 16.382V5.618a1 1 0 00-1.447-.894L15 7m-6 3v6m6-6v6" /></svg><span class="text-[10px] font-bold">MAP</span></button>
+            <button @click="activeTab = 'flights'" :class="getNavClass('flights')" class="flex flex-col items-center justify-center py-3"><svg class="h-5 w-5 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg><span class="text-[10px] font-bold">FLIGHTS</span></button>
+            <button @click="activeTab = 'traffic'" :class="getNavClass('traffic')" class="flex flex-col items-center justify-center py-3"><svg class="h-5 w-5 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10l2-2h8zM12 18h7m-7 0a1 1 0 01-1-1v-1m-5 4H3a2 2 0 01-2-2V6a2 2 0 012-2h10l4 4v10a2 2 0 01-2 2h-3" /></svg><span class="text-[10px] font-bold">TRAFFIC</span></button>
+        </nav>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted, onUnmounted, computed, watch } = Vue;
+
+        createApp({
+            setup() {
+                const activeTab = ref('home');
+                const flightType = ref('departures');
+                const getToday = () => new Date().toLocaleDateString('en-CA');
+                const selectedDate = ref(getToday());
+                const openFlightId = ref(null);
+                const isLoading = ref(true);
+                const allFlights = ref([]);
+
+                const currentTime = ref('');
+                const currentDate = ref('');
+                let timeInterval = null;
+
+                const weather = ref({ temp: 24, weatherIcon: 'https://www.hko.gov.hk/images/wxicon/pic51.png', signals: ['https://www.hko.gov.hk/images/HKOWarningIcon/t3.gif'] });
+
+                const getMockAircraft = (fn) => {
+                    if (fn.startsWith('CX')) return 'Airbus A350-900';
+                    if (fn.startsWith('SQ')) return 'Boeing 787-10';
+                    if (fn.startsWith('EK')) return 'Airbus A380-800';
+                    if (fn.startsWith('UO')) return 'Airbus A321neo';
+                    return 'Boeing 777-300ER';
+                };
+
+                const fetchFlights = async () => {
+                    isLoading.value = true;
+                    const isArr = flightType.value === 'arrivals';
+                    // 精確採用你提供的 URL 格式
+                    const target = `https://www.hongkongairport.com/flightinfo-rest/rest/flights/past?date=${selectedDate.value}&lang=en&cargo=false&arrival=${isArr}`;
+                    const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(target)}`;
+
+                    try {
+                        console.log(`Fetching ${flightType.value} for ${selectedDate.value}...`);
+                        const res = await fetch(proxy);
+                        const json = await res.json();
+                        const data = JSON.parse(json.contents);
+
+                        if (data && data.list) {
+                            allFlights.value = data.list.map((f, i) => ({
+                                id: f.flight[0].no + i,
+                                flight_number: f.flight[0].no,
+                                airport: f.destination[0] ? f.destination[0].airport_name : (f.origin[0] ? f.origin[0].airport_name : 'Unknown'),
+                                scheduledTime: f.scheduled,
+                                actualTime: f.actual || f.estimated || null,
+                                status: f.status,
+                                terminal: f.terminal,
+                                aisle: f.aisle,
+                                gate: f.gate,
+                                aircraftFull: getMockAircraft(f.flight[0].no)
+                            }));
+                        } else {
+                            allFlights.value = [];
+                        }
+                    } catch (e) {
+                        console.error("AAHK API Error:", e);
+                        allFlights.value = [];
+                    } finally {
+                        isLoading.value = false;
+                    }
+                };
+
+                // 當切換離港/抵港或日期時觸發
+                const setFlightType = (type) => {
+                    flightType.value = type;
+                    fetchFlights();
+                };
+
+                watch(selectedDate, () => { fetchFlights(); });
+
+                const updateTime = () => {
+                    const now = new Date();
+                    currentTime.value = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                    currentDate.value = now.toLocaleDateString('zh-HK', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                };
+
+                onMounted(() => { 
+                    updateTime(); 
+                    timeInterval = setInterval(updateTime, 1000); 
+                    fetchFlights(); 
+                });
+                onUnmounted(() => clearInterval(timeInterval));
+
+                return {
+                    activeTab, flightType, selectedDate, currentTime, currentDate,
+                    weather, isLoading, openFlightId, allFlights,
+                    trafficEstimates: [ { district: 'Central', mtr: '24 min', bus: '55 min', taxi: '35 min' }, { district: 'TST', mtr: '21 min', bus: '65 min', taxi: '30 min' } ],
+                    getNavClass: (tab) => activeTab.value === tab ? 'text-stone-800' : 'text-stone-300',
+                    getStatusClass: (s) => (s.toLowerCase().includes('ontime') || s.toLowerCase().includes('arrived') || s.includes('準時')) ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600',
+                    toggleFlightDetails: (id) => openFlightId.value = openFlightId.value === id ? null : id,
+                    getAircraftImageUrl: (full) => `images/${full}.jpg`,
+                    handleImageError: (e) => e.target.src = 'https://i.imgur.com/gYf4T52.png',
+                    setFlightType
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
